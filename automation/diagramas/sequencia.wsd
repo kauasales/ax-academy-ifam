@@ -1,0 +1,26 @@
+@startuml
+actor Usuario
+participant "Robô de Automação" as Robo
+participant "Base de Pedidos" as Base
+participant "Planilha de Saída" as Planilha
+
+Usuario -> Robo : Inicia automação
+Robo -> Base : Buscar pedidos (CEP, peso, dimensões)
+Base --> Robo : Lista de pedidos
+
+Robo -> Robo : Armazenar pedidos internamente
+
+== Processamento das transportadoras ==
+Robo -> Robo : Executar função Correios para todos os pedidos
+Robo -> Robo : Armazenar resultados e erros Correios (incluindo CEP inválido)
+
+Robo -> Robo : Executar função Loggi para todos os pedidos
+Robo -> Robo : Armazenar resultados e erros Loggi (incluindo CEP inválido)
+
+Robo -> Robo : Executar função J&T para todos os pedidos
+Robo -> Robo : Armazenar resultados e erros J&T (incluindo CEP inválido)
+
+Robo -> Robo : Consolidar resultados de todas as transportadoras
+Robo -> Planilha : Registrar planilha final (valores + erros)
+Robo -> Usuario : Entregar planilha final
+@enduml

@@ -1,0 +1,28 @@
+# Pesos do modelo (gerados por python train.py)
+weights/
+
+# Predicoes (geradas por python inference.py)
+predictions/
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+@startuml
+start
+
+:Iniciar automação;
+:Buscar pedidos (CEP, peso, dimensões, valor);
+
+repeat
+    :Processar transportadora (Correios / Loggi / J&T);
+    :Consultar frete para todos os pedidos;
+    if (Alguma falha?) then (Sim)
+        :Registrar erros (incluindo CEP inválido);
+    endif
+    :Salvar valores + prazos;
+repeat while (Existem transportadoras não processadas?)
+
+:Consolidar resultados de todas as transportadoras;
+:Registrar na planilha final;
+:Entregar resultado ao usuário;
+
+stop
+@enduml
