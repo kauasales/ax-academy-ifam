@@ -5,6 +5,7 @@ import email
 import getpass
 import imaplib
 import os
+import stat
 import re
 import sys
 from email.header import decode_header, make_header
@@ -125,10 +126,38 @@ def download_attachments(msg: email.message.Message, output_dir: str, cpf: str) 
             continue
 
         file_path = os.path.join(cpf_dir, filename)
-        with open(file_path, "wb") as f:
-            f.write(payload)
+        tmp_path = f"{file_path}.tmp"
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(payload)
+            try:
+                os.replace(tmp_path, file_path)
+            except PermissionError:
+                # Se não puder substituir diretamente, tentar tornar o destino gravável e tentar novamente
+                try:
+                    if os.path.exists(file_path):
+                        os.chmod(file_path, stat.S_IWRITE)
+                        os.replace(tmp_path, file_path)
+                    else:
+                        # destino não existe, tentar mover
+                        os.replace(tmp_path, file_path)
+                except Exception as ex:
+                    # falha final: remover tmp e relatar
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    raise
 
-        saved_files.append(file_path)
+            saved_files.append(file_path)
+        except Exception:
+            # cleanup tmp file se houver
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            raise
 
     return saved_files
 

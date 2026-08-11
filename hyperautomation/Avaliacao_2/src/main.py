@@ -6,11 +6,20 @@ import importlib.util
 import sys
 
 BUSCA_PATH = os.path.join(os.path.dirname(__file__), "busca_solicitação.py")
+VALIDAR_PATH = os.path.join(os.path.dirname(__file__), "validar_documentacao.py")
+
 spec = importlib.util.spec_from_file_location("busca_solicitação", BUSCA_PATH)
 busca = importlib.util.module_from_spec(spec)
 # Ensure the src directory is on sys.path so sibling modules can be imported normally
 sys.path.insert(0, os.path.dirname(__file__))
 spec.loader.exec_module(busca)
+
+if os.path.exists(VALIDAR_PATH):
+    spec_validar = importlib.util.spec_from_file_location("validar_documentacao", VALIDAR_PATH)
+    validar_documentacao = importlib.util.module_from_spec(spec_validar)
+    spec_validar.loader.exec_module(validar_documentacao)
+else:
+    validar_documentacao = None
 
 
 # Monta o dicionário de configuração SMTP usado para envio de e-mails.
@@ -68,10 +77,17 @@ def main() -> int:
     try:
         today = datetime.date.today()
         message_ids = busca.search_unseen_messages(imap, mailbox, subject_phrase="Cadastro Portal Fake -", since_date=today)
+        had_messages = False
         if not message_ids:
             print("Nenhuma mensagem encontrada.")
         else:
+            had_messages = True
             busca.process_messages(imap, message_ids, output_dir, smtp_config, mailbox)
+
+        if had_messages and validar_documentacao is not None:
+            validar_documentacao.load_dotenv()
+            docs_ok_dir = os.getenv("DOCS_OK_DIR", "docs_ok")
+            validar_documentacao.processar_documentos_salvos(output_dir, docs_ok_dir)
     finally:
         try:
             imap.logout()
