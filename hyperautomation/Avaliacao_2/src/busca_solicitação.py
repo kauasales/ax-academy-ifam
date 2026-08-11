@@ -8,6 +8,14 @@ import os
 import re
 import sys
 from email.header import decode_header, make_header
+import importlib.util
+RC_PATH = os.path.join(os.path.dirname(__file__), "resposta_cliente.py")
+if os.path.exists(RC_PATH):
+    spec_rc = importlib.util.spec_from_file_location("resposta_cliente", RC_PATH)
+    resposta_cliente = importlib.util.module_from_spec(spec_rc)
+    spec_rc.loader.exec_module(resposta_cliente)
+else:
+    resposta_cliente = None
 
 SUBJECT_PATTERN = re.compile(r"Cadastro Portal Fake -\s*(\d{11})", re.IGNORECASE)
 
@@ -125,8 +133,8 @@ def download_attachments(msg: email.message.Message, output_dir: str, cpf: str) 
     return saved_files
 
 
-# Processa as mensagens encontradas, filtra por data e assunto, e salva anexos.
-def process_messages(imap: imaplib.IMAP4, message_ids: list[str], output_dir: str, mailbox: str = "INBOX") -> None:
+# Processa as mensagens encontradas: verifica documentos obrigatórios e age conforme resultado.
+def process_messages(imap: imaplib.IMAP4, message_ids: list[str], output_dir: str, smtp_config: dict, mailbox: str = "INBOX") -> None:
     if not message_ids:
         print("Nenhuma mensagem não vista encontrada.")
         return
@@ -153,6 +161,33 @@ def process_messages(imap: imaplib.IMAP4, message_ids: list[str], output_dir: st
         cpf = match.group(1)
         print(f"Processando mensagem {msg_id} - CPF: {cpf} - Assunto: {subject}")
 
+        # Verifica documentos obrigatórios sem baixar anexos
+        missing = resposta_cliente.find_missing_documents(msg, cpf) if resposta_cliente else []
+        if missing:
+            recipient = resposta_cliente.get_reply_recipient(msg) if resposta_cliente else None
+            if not recipient:
+                print(f"Não foi possível determinar destinatário de resposta para {msg_id}")
+                continue
+            from_address = smtp_config.get("username")
+            reply = resposta_cliente.create_reply_message(msg, from_address, recipient, missing) if resposta_cliente else None
+            try:
+                resposta_cliente.send_email_message(
+                    smtp_config.get("host"),
+                    smtp_config.get("port"),
+                    smtp_config.get("username"),
+                    smtp_config.get("password"),
+                    reply,
+                    use_tls=smtp_config.get("use_tls", True),
+                )
+                print(f"Enviada resposta de documentação incompleta para {recipient} do email {msg_id}")
+            except Exception as e:
+                print(f"Falha ao enviar resposta para {recipient}: {e}")
+
+            # Marca como lida para evitar reprocessamento
+            imap.store(msg_id, "+FLAGS", "\\Seen")
+            continue
+
+        # Todos os documentos presentes: baixar anexos
         saved_files = download_attachments(msg, output_dir, cpf)
         if saved_files:
             for file_path in saved_files:
@@ -163,6 +198,7 @@ def process_messages(imap: imaplib.IMAP4, message_ids: list[str], output_dir: st
         imap.store(msg_id, "+FLAGS", "\\Seen")
 
 
+# Cria e retorna o parser de argumentos da linha de comando usados pelo script.
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Busca solicitações não vistas no e-mail e baixa anexos de mensagens com assunto 'Cadastro Portal Fake - {CPF}'."
