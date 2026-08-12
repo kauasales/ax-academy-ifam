@@ -87,7 +87,7 @@ def main() -> int:
         if had_messages and validar_documentacao is not None:
             validar_documentacao.load_dotenv()
             docs_ok_dir = os.getenv("DOCS_OK_DIR", "docs_ok")
-            validar_documentacao.processar_documentos_salvos(output_dir, docs_ok_dir)
+            validar_documentacao.processar_documentos_salvos(output_dir, docs_ok_dir, smtp_config=smtp_config)
     finally:
         try:
             imap.logout()
@@ -99,3 +99,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

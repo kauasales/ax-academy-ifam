@@ -4,6 +4,7 @@ import datetime
 import email
 import getpass
 import imaplib
+import json
 import os
 import stat
 import re
@@ -102,10 +103,19 @@ def search_unseen_messages(imap: imaplib.IMAP4, mailbox: str = "INBOX", subject_
 
 
 # Baixa anexos da mensagem para uma pasta específica baseada no CPF.
-def download_attachments(msg: email.message.Message, output_dir: str, cpf: str) -> list[str]:
+def download_attachments(msg: email.message.Message, output_dir: str, cpf: str, msg_id: str) -> list[str]:
     saved_files = []
     cpf_dir = os.path.join(output_dir, cpf)
     os.makedirs(cpf_dir, exist_ok=True)
+
+    # Salva metadados para validação futura
+    metadata = {
+        "reply_recipient": resposta_cliente.get_reply_recipient(msg) if resposta_cliente else None,
+        "subject": decode_mime_words(msg.get("Subject", "")),
+        "message_id": msg_id
+    }
+    with open(os.path.join(cpf_dir, "validation_metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f)
 
     for part in msg.walk():
         content_disposition = part.get("Content-Disposition", "")
@@ -217,7 +227,7 @@ def process_messages(imap: imaplib.IMAP4, message_ids: list[str], output_dir: st
             continue
 
         # Todos os documentos presentes: baixar anexos
-        saved_files = download_attachments(msg, output_dir, cpf)
+        saved_files = download_attachments(msg, output_dir, cpf, msg_id)
         if saved_files:
             for file_path in saved_files:
                 print(f"  Anexo salvo: {file_path}")

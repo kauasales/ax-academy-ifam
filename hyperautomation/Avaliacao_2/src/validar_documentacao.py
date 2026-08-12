@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import re
 import shutil
 from pathlib import Path
 
 import pdfplumber
+
+try:
+    import resposta_cliente
+except ImportError:
+    resposta_cliente = None
 
 
 REQUIRED_DOCUMENTS = [
@@ -85,6 +91,18 @@ def _required_document_names(cpf: str) -> list[str]:
     return [template.format(cpf=cpf) for template in REQUIRED_DOCUMENTS]
 
 
+def _load_validation_metadata(cpf_dir: Path) -> dict:
+    metadata_path = cpf_dir / "validation_metadata.json"
+    if not metadata_path.is_file():
+        return {}
+
+    try:
+        with open(metadata_path, encoding="utf-8") as fp:
+            return json.load(fp)
+    except Exception:
+        return {}
+
+
 def validar_documentos_cpf(cpf_dir: str | os.PathLike[str]) -> tuple[bool, str | None]:
     cpf_dir = Path(cpf_dir)
     cpf = cpf_dir.name
@@ -123,7 +141,50 @@ def validar_documentos_cpf(cpf_dir: str | os.PathLike[str]) -> tuple[bool, str |
     return True, None
 
 
-def processar_documentos_salvos(output_dir: str | os.PathLike[str], docs_ok_dir: str | os.PathLike[str]) -> dict:
+def _send_validation_failure_email(cpf_dir: Path, reason: str, smtp_config: dict | None) -> None:
+    if not resposta_cliente or smtp_config is None:
+        return
+
+    metadata = _load_validation_metadata(cpf_dir)
+    recipient = metadata.get("reply_recipient")
+    if not recipient:
+        print(f"[SEM ENVIO] Não há destinatário para notificar erro de validação do CPF {cpf_dir.name}")
+        return
+
+    from_address = smtp_config.get("username")
+    subject = metadata.get("subject")
+    if subject:
+        if subject.lower().startswith("re:"):
+            reply_subject = subject
+        else:
+            reply_subject = f"Re: {subject}"
+    else:
+        reply_subject = "Re: Documentação inválida"
+
+    body = resposta_cliente.build_validation_error_message(reason)
+    message = resposta_cliente.create_notification_message(
+        from_address=from_address,
+        to_address=recipient,
+        subject=reply_subject,
+        body=body,
+        in_reply_to=metadata.get("message_id"),
+    )
+
+    try:
+        resposta_cliente.send_email_message(
+            smtp_config.get("host"),
+            smtp_config.get("port"),
+            smtp_config.get("username"),
+            smtp_config.get("password"),
+            message,
+            use_tls=smtp_config.get("use_tls", True),
+        )
+        print(f"[AVISO ENVIADO] Notificação de erro enviada para {recipient} (CPF {cpf_dir.name})")
+    except Exception as exc:
+        print(f"[FALHA ENVIO] Não foi possível enviar notificação para {recipient}: {exc}")
+
+
+def processar_documentos_salvos(output_dir: str | os.PathLike[str], docs_ok_dir: str | os.PathLike[str], smtp_config: dict | None = None) -> dict:
     output_dir = Path(output_dir)
     docs_ok_dir = Path(docs_ok_dir)
 
@@ -141,6 +202,14 @@ def processar_documentos_salvos(output_dir: str | os.PathLike[str], docs_ok_dir:
 
         ok, reason = validar_documentos_cpf(item)
         if ok:
+            # Enviar e-mail de confirmação de recebimento
+            _send_confirmation_email(item, smtp_config)
+            
+            # Limpar metadados
+            metadata_path = item / "validation_metadata.json"
+            if metadata_path.exists():
+                os.remove(metadata_path)
+
             target_dir = docs_ok_dir / item.name
             if target_dir.exists():
                 shutil.rmtree(target_dir)
@@ -150,8 +219,40 @@ def processar_documentos_salvos(output_dir: str | os.PathLike[str], docs_ok_dir:
         else:
             nao_movidos.append(item.name)
             print(f"[NÃO MOVIDO] CPF {item.name}: {reason}")
+            _send_validation_failure_email(item, reason, smtp_config)
 
     return {"movidos": movidos, "nao_movidos": nao_movidos}
+
+def _send_confirmation_email(cpf_dir: Path, smtp_config: dict | None) -> None:
+    if not resposta_cliente or smtp_config is None:
+        return
+
+    metadata = _load_validation_metadata(cpf_dir)
+    recipient = metadata.get("reply_recipient")
+    if not recipient:
+        return
+
+    from_address = smtp_config.get("username")
+    message = resposta_cliente.create_notification_message(
+        from_address=from_address,
+        to_address=recipient,
+        subject="Re: Documentação recebida",
+        body="Documentação recebida, entraremos em contato em breve!",
+        in_reply_to=metadata.get("message_id"),
+    )
+
+    try:
+        resposta_cliente.send_email_message(
+            smtp_config.get("host"),
+            smtp_config.get("port"),
+            smtp_config.get("username"),
+            smtp_config.get("password"),
+            message,
+            use_tls=smtp_config.get("use_tls", True),
+        )
+        print(f"[CONFIRMAÇÃO ENVIADA] E-mail enviado para {recipient} (CPF {cpf_dir.name})")
+    except Exception as exc:
+        print(f"[FALHA ENVIO] Não foi possível enviar confirmação para {recipient}: {exc}")
 
 
 def main() -> int:
