@@ -67,23 +67,47 @@ def _extract_cpf_from_pdf(pdf_path: str | os.PathLike[str]) -> str | None:
                 extracted = page.extract_text() or ""
                 text_parts.append(extracted)
             content = "\n".join(text_parts)
-    except Exception:
+    except Exception as exc:
+        print(f"DEBUG: Erro ao abrir PDF {pdf_path}: {exc}")
         return None
 
-    if not content:
+    if not content.strip():
+        print(f"DEBUG: PDF {pdf_path} está vazio ou sem camada de texto.")
         return None
 
-    # Captura o valor numérico (com ou sem pontuação) logo após a palavra CPF, 
-    # seja na mesma linha (ex: CPF: 09090909) ou na linha de baixo.
-    pattern = r"(?i)\bCPF\b\s*[:\-]?\s*\n?\s*([\d\.\-]+)"
+    # Normaliza caracteres ocultos de espaço (\xa0) e quebras do Windows (\r)
+    content = content.replace("\xa0", " ").replace("\r", "")
+
+    # Estratégia 1: Regex abrangente tolerante a quebras de linha e separadores
+    pattern = r"(?i)CPF[^\d\n]*\n?\s*([\d\.\-]+)"
     match = re.search(pattern, content)
-    
+
     if match:
         raw_cpf = match.group(1)
         digits = _to_digits(raw_cpf)
         if digits:
+            print(f"DEBUG: CPF capturado via Regex: {digits}")
             return digits
 
+    # Estratégia 2: Varredura linha por linha
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    for i, line in enumerate(lines):
+        if re.search(r"\bCPF\b", line, re.IGNORECASE):
+            # Tenta na mesma linha
+            digits_same = _to_digits(line)
+            if digits_same:
+                print(f"DEBUG: CPF capturado na mesma linha: {digits_same}")
+                return digits_same
+
+            # Tenta na linha seguinte
+            if i + 1 < len(lines):
+                digits_next = _to_digits(lines[i + 1])
+                if digits_next:
+                    print(f"DEBUG: CPF capturado na linha seguinte: {digits_next}")
+                    return digits_next
+
+    print("DEBUG: Falha na captura. Conteúdo extraído bruto:")
+    print(repr(content))
     return None
 
 
