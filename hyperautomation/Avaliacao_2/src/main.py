@@ -7,6 +7,7 @@ import sys
 
 BUSCA_PATH = os.path.join(os.path.dirname(__file__), "busca_solicitação.py")
 VALIDAR_PATH = os.path.join(os.path.dirname(__file__), "validar_documentacao.py")
+EXTRAIR_PATH = os.path.join(os.path.dirname(__file__), "extrair_dados.py")
 
 spec = importlib.util.spec_from_file_location("busca_solicitação", BUSCA_PATH)
 busca = importlib.util.module_from_spec(spec)
@@ -20,6 +21,13 @@ if os.path.exists(VALIDAR_PATH):
     spec_validar.loader.exec_module(validar_documentacao)
 else:
     validar_documentacao = None
+
+if os.path.exists(EXTRAIR_PATH):
+    spec_extrair = importlib.util.spec_from_file_location("extrair_dados", EXTRAIR_PATH)
+    extrair_dados = importlib.util.module_from_spec(spec_extrair)
+    spec_extrair.loader.exec_module(extrair_dados)
+else:
+    extrair_dados = None
 
 
 # Monta o dicionário de configuração SMTP usado para envio de e-mails.
@@ -67,7 +75,6 @@ def main() -> int:
 
     no_ssl = args.no_ssl or os.getenv("EMAIL_NO_SSL", "false").lower() in {"1", "true", "yes", "on"}
     use_ssl = not no_ssl
-
     try:
         imap = busca.connect_imap(host, username, password, use_ssl=use_ssl, port=port)
     except Exception as error:
@@ -87,7 +94,14 @@ def main() -> int:
         if had_messages and validar_documentacao is not None:
             validar_documentacao.load_dotenv()
             docs_ok_dir = os.getenv("DOCS_OK_DIR", "docs_ok")
-            validar_documentacao.processar_documentos_salvos(output_dir, docs_ok_dir, smtp_config=smtp_config)
+            result = validar_documentacao.processar_documentos_salvos(output_dir, docs_ok_dir, smtp_config=smtp_config)
+
+            if result and result.get("movidos") and extrair_dados is not None:
+                print("Iniciando extração de dados para novos documentos aprovados...")
+                extrair_dados.load_dotenv()
+                json_data_dir = os.getenv("JSON_DATA_DIR", "json_data")
+                extrair_dados.processar_diretorio_docs(docs_ok_dir, json_data_dir)
+
     finally:
         try:
             imap.logout()
