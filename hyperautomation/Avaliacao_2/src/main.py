@@ -102,6 +102,15 @@ def main() -> int:
                 json_data_dir = os.getenv("JSON_DATA_DIR", "json_data")
                 extrair_dados.processar_diretorio_docs(docs_ok_dir, json_data_dir)
 
+                # Integrar preenchimento da planilha
+                PLANILHA_PATH = os.path.join(os.path.dirname(__file__), "preencher_planilha_mestra.py")
+                spec_planilha = importlib.util.spec_from_file_location("preencher_planilha_mestra", PLANILHA_PATH)
+                planilha = importlib.util.module_from_spec(spec_planilha)
+                spec_planilha.loader.exec_module(planilha)
+                
+                print("Iniciando preenchimento da planilha mestra...")
+                planilha.main()
+
     finally:
         try:
             imap.logout()
