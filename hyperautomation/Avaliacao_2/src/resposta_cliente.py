@@ -5,6 +5,7 @@ from email.message import EmailMessage
 from email.utils import parseaddr
 from typing import Iterable
 
+
 REQUIRED_DOC_TEMPLATES = [
     "Ficha_Cadastro_{cpf}.pdf",
     "Documento_Foto_{cpf}.pdf",
@@ -56,6 +57,15 @@ def build_incomplete_message(missing_documents: Iterable[str]) -> str:
     )
 
 
+# Nova função para mensagens de erro genéricas
+def build_validation_error_message(reason: str) -> str:
+    return (
+        "Houve um problema na validação da sua documentação.\n\n"
+        f"Motivo: {reason}\n\n"
+        "Por favor, verifique o(s) arquivo(s) mencionado(s) acima e reenvie todos os documentos necessários."
+    )
+
+
 # Gera um `EmailMessage` de resposta informando os documentos faltantes.
 def create_reply_message(original_msg, from_address: str, to_address: str, missing_documents: Iterable[str]) -> EmailMessage:
     subject = original_msg.get("Subject", "")
@@ -75,6 +85,20 @@ def create_reply_message(original_msg, from_address: str, to_address: str, missi
     if message_id:
         message["In-Reply-To"] = message_id
         message["References"] = message_id
+
+    return message
+
+
+# Gera um `EmailMessage` de resposta informando um erro genérico na validação.
+def create_notification_message(from_address: str, to_address: str, subject: str, body: str, in_reply_to: str = None) -> EmailMessage:
+    message = EmailMessage()
+    message["From"] = from_address
+    message["To"] = to_address
+    message["Subject"] = subject
+    message.set_content(body)
+    if in_reply_to:
+        message["In-Reply-To"] = in_reply_to
+        message["References"] = in_reply_to
 
     return message
 
@@ -99,3 +123,4 @@ def send_email_message(smtp_host: str, smtp_port: int, username: str, password: 
             smtp.starttls()
         smtp.login(username, password)
         smtp.send_message(message)
+
